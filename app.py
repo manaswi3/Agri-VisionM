@@ -11,25 +11,32 @@ import uuid
 from datetime import datetime
 import tensorflow as tf
 from tensorflow import keras
-import json
+
+ import json
 import logging
+import os
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 
-# Load environment variables
 load_dotenv()
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Secure secret key from environment variable
 app.secret_key = os.getenv("SECRET_KEY", "default-secret-key")
 
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 
+LANG = {
+    "en": {
+        "welcome": "Welcome to Agri Vision"
+    },
+    "te": {
+        "welcome": "అగ్రి విజన్‌కు స్వాగతం"
+    }
+}
 # Create directories
 os.makedirs('static/uploads', exist_ok=True)
 os.makedirs('static/css', exist_ok=True)
@@ -187,7 +194,7 @@ def datetimeformat_filter(value):
 @app.route('/')
 def index():
     """Home page"""
-    return render_template('index.html')
+    return render_template('index.html', text=LANG.get(lang, LANG["en"]), lang=lang)
 
 
 @app.route('/analyze', methods=['GET', 'POST'])
@@ -369,6 +376,11 @@ def health():
         'model_loaded': model_loaded,
         'service': 'Agri-Vision Cotton Analysis API'
     })
+
+@app.route("/set-language/<lang>")
+def set_language(lang):
+    return redirect(url_for("index", lang=lang))
+
 
 
 if __name__ == '__main__':
