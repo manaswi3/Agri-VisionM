@@ -15,6 +15,8 @@
     --bg-main: var(--cotton-white);
     --text-main: var(--deep-forest);
     --text-muted: var(--warm-earth);
+    /* Generic text color used by inline templates (fallbacks referenced --text-color) */
+    --text-color: var(--text-main);
     --card-bg: #FFFFFF;
     --card-border: rgba(0, 0, 0, 0.03);
     
@@ -77,6 +79,8 @@
     --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
     --card-hover-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
     
+    /* Ensure templates using --text-color inherit readable color in dark mode */
+    --text-color: var(--text-main);
     --dashboard-bg: #1A1A1A;
 
     /* Theme override fixes */
@@ -1169,6 +1173,16 @@ body {
 
 /* Compact Footer */
 .footer {
+    /* Dark forest green footer */
+    background: #184b34;
+    color: #ffffff;
+    padding: 2.5rem 2rem 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .footer {
+    background: #00180d;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
     background: var(--footer-bg);
     color: var(--footer-text);
     padding: 2.5rem 2rem 1.5rem; /* Significantly reduced padding */
@@ -1187,6 +1201,7 @@ body {
 
 .footer-brand h2 {
     font-size: 1.3rem;
+    color: #ffffff;
     color: var(--footer-text);
     margin: 0;
 }
@@ -1197,17 +1212,19 @@ body {
 }
 
 .footer-links-compact a {
+    color: rgba(255,255,255,0.95);
     color: var(--footer-text);
     text-decoration: none;
     font-size: 0.9rem;
-    opacity: 0.7;
+    opacity: 0.95;
     transition: var(--transition-smooth);
-    font-weight: 500;
+    font-weight: 600;
 }
 
 .footer-links-compact a:hover {
     opacity: 1;
-    color: var(--emerald-green);
+    color: rgba(255,255,255,0.95);
+    text-decoration: underline;
 }
 
 .footer-bottom {
@@ -1218,9 +1235,11 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    opacity: 0.9;
     opacity: 0.8;
     color: var(--footer-text);
     font-size: 0.85rem;
+    color: rgba(255,255,255,0.9);
 }
 
 .footer-social {
@@ -1229,13 +1248,14 @@ body {
 }
 
 .footer-social a {
+    color: rgba(255,255,255,0.95);
     color: var(--footer-text);
     font-size: 1.1rem;
     transition: var(--transition-smooth);
 }
 
 .footer-social a:hover {
-    color: var(--emerald-green);
+    color: rgba(255,255,255,1);
     transform: translateY(-3px);
 }
 
