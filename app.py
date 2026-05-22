@@ -11,6 +11,7 @@ import logging
 import os
 import random
 import re
+import threading
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
@@ -95,9 +96,94 @@ growth_stage_classes = [
     "Split Cotton Boll",
 ]
 
+RESNET_MODEL_PATH = "models/cotton_crop_disease_classification/full_resnet50_model.pth"
+YOLO_MODEL_PATH = "models/cotton_crop_growth_stage_prediction/best.pt"
+
 resnet_model = None
 yolo_model = None
 _models_loaded = False
+
+
+class ModelManager:
+    _instance = None
+    _instance_lock = threading.Lock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self):
+        if getattr(self, "_initialized", False):
+            return
+        self._load_lock = threading.Lock()
+        self.loaded = False
+        self.errors = {"resnet": None, "yolo": None}
+        self._initialized = True
+
+    def load_models(self) -> Tuple[Optional[torch.nn.Module], Optional[YOLO]]:
+        global resnet_model, yolo_model, _models_loaded
+
+        if self.loaded:
+            return resnet_model, yolo_model
+
+        with self._load_lock:
+            if self.loaded:
+                return resnet_model, yolo_model
+
+            if resnet_model is None:
+                try:
+                    try:
+                        resnet_model = torch.load(
+                            RESNET_MODEL_PATH,
+                            map_location=torch.device("cpu"),
+                        )
+                    except TypeError:
+                        resnet_model = torch.load(
+                            RESNET_MODEL_PATH,
+                            map_location=torch.device("cpu"),
+                            weights_only=False,
+                        )
+                    resnet_model.eval()
+                    self.errors["resnet"] = None
+                    logger.info("ResNet50 model loaded successfully")
+                except Exception as exc:
+                    self.errors["resnet"] = str(exc)
+                    logger.warning("ResNet50 model not found or failed to load: %s", exc)
+                    resnet_model = None
+
+            if yolo_model is None:
+                try:
+                    yolo_model = YOLO(YOLO_MODEL_PATH)
+                    self.errors["yolo"] = None
+                    logger.info("YOLOv8 model loaded successfully")
+                except Exception as exc:
+                    self.errors["yolo"] = str(exc)
+                    logger.warning("YOLOv8 model not found or failed to load: %s", exc)
+                    yolo_model = None
+
+            self.loaded = True
+            _models_loaded = True
+            return resnet_model, yolo_model
+
+    def diagnostics(self) -> Dict[str, Any]:
+        return {
+            "resnet": {
+                "loaded": resnet_model is not None,
+                "path": RESNET_MODEL_PATH,
+                "error": None if resnet_model is not None else self.errors.get("resnet"),
+            },
+            "yolo": {
+                "loaded": yolo_model is not None,
+                "path": YOLO_MODEL_PATH,
+                "error": None if yolo_model is not None else self.errors.get("yolo"),
+            },
+        }
+
+
+model_manager = ModelManager()
 
 
 def _ensure_rgb(image: np.ndarray) -> np.ndarray:
@@ -251,44 +337,11 @@ class GradCAM:
 
 
 def load_models() -> Tuple[Optional[torch.nn.Module], Optional[YOLO]]:
-    global resnet_model, yolo_model, _models_loaded
-
-    if _models_loaded:
-        return resnet_model, yolo_model
-
-    if resnet_model is None:
-        try:
-            try:
-                resnet_model = torch.load(
-                    "models/cotton_crop_disease_classification/full_resnet50_model.pth",
-                    map_location=torch.device("cpu"),
-                )
-            except TypeError:
-                resnet_model = torch.load(
-                    "models/cotton_crop_disease_classification/full_resnet50_model.pth",
-                    map_location=torch.device("cpu"),
-                    weights_only=False,
-                )
-            resnet_model.eval()
-            logger.info("ResNet50 model loaded successfully")
-        except Exception as exc:
-            logger.warning("ResNet50 model not found or failed to load: %s", exc)
-            resnet_model = None
-
-    if yolo_model is None:
-        try:
-            yolo_model = YOLO("models/cotton_crop_growth_stage_prediction/best.pt")
-            logger.info("YOLOv8 model loaded successfully")
-        except Exception as exc:
-            logger.warning("YOLOv8 model not found or failed to load: %s", exc)
-            yolo_model = None
-
-    _models_loaded = True
-    return resnet_model, yolo_model
+    return model_manager.load_models()
 
 
 def ensure_models_loaded() -> None:
-    load_models()
+    model_manager.load_models()
 
 
 def preprocess_image_for_resnet(image: np.ndarray, target_size: Tuple[int, int] = (224, 224)) -> torch.Tensor:
@@ -612,17 +665,28 @@ def analyze_image(image: np.ndarray) -> Dict[str, Any]:
         "farmer_insights": insights,
     }
 
+    warnings = []
+    if resnet_model is None:
+        warnings.append(
+            "Disease model unavailable in this deployment; fallback confidence estimates are being used."
+        )
+
     if growth["main_class"] is None:
         fallback_reason = (
             "Growth stage model unavailable in this deployment."
             if yolo_model is None
             else "Cotton growth stage could not be detected from the uploaded image."
         )
-        result["warnings"] = [
-            fallback_reason,
-            "Disease analysis is still provided, but comparison may be less reliable without a confirmed cotton crop detection.",
-            "Grad-CAM explainability may also be affected if the primary crop is not detected.",
-        ]
+        warnings.extend(
+            [
+                fallback_reason,
+                "Disease analysis is still provided, but comparison may be less reliable without a confirmed cotton crop detection.",
+                "Grad-CAM explainability may also be affected if the primary crop is not detected.",
+            ]
+        )
+
+    if warnings:
+        result["warnings"] = warnings
 
     return result
 
@@ -739,11 +803,15 @@ def stories():
 @app.route("/health")
 def health():
     ensure_models_loaded()
+    model_loaded = resnet_model is not None and yolo_model is not None
+    diagnostics = model_manager.diagnostics()
     return jsonify(
         {
             "status": "healthy",
+            "mode": "ready" if model_loaded else "degraded",
             "timestamp": datetime.now().isoformat(),
-            "model_loaded": resnet_model is not None and yolo_model is not None,
+            "model_loaded": model_loaded,
+            "models": diagnostics,
             "service": "Agri-Vision Cotton Analysis API",
         }
     )
