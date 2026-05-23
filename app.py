@@ -94,6 +94,57 @@ growth_stage_classes = [
     "Matured Cotton Boll",
     "Split Cotton Boll",
 ]
+
+disease_info_map = {
+    "Aphids": {
+        "healthy_image": "static/images/healthy_leaf.jpg",
+        "description": "Aphids are small sap-sucking insects that weaken cotton plants by feeding on tender leaves and shoots.",
+        "symptoms": "Curled leaves, sticky honeydew, yellowing, and clusters of tiny insects on the underside of leaves.",
+        "treatment": "Remove heavily infested leaves, encourage natural predators, and use neem oil or recommended insecticide if infestation increases.",
+    },
+    "Army worm": {
+        "healthy_image": "static/images/healthy_leaf.jpg",
+        "description": "Army worms are leaf-feeding caterpillars that can quickly damage cotton foliage when populations build up.",
+        "symptoms": "Chewed leaf edges, holes in leaves, skeletonized foliage, and visible larvae on plants.",
+        "treatment": "Scout fields regularly, remove larvae where possible, and apply recommended biological or chemical control at early stages.",
+    },
+    "Bacterial blight": {
+        "healthy_image": "static/images/healthy_leaf.jpg",
+        "description": "Bacterial blight is a cotton disease that spreads through infected seed, crop residue, rain splash, and wind-driven moisture.",
+        "symptoms": "Angular water-soaked leaf spots, dark lesions, yellowing, and drying of affected leaf tissue.",
+        "treatment": "Avoid overhead irrigation, remove infected debris, use disease-free seed, and follow local copper-based spray recommendations if needed.",
+    },
+    "Cotton Boll Rot": {
+        "healthy_image": "static/images/healthy_leaf.jpg",
+        "description": "Cotton boll rot affects developing bolls, especially under humid conditions or poor field drainage.",
+        "symptoms": "Soft or discolored bolls, fungal growth, rotting tissue, and premature boll drop.",
+        "treatment": "Improve drainage and airflow, remove rotten bolls, avoid excess irrigation, and manage insects that create boll wounds.",
+    },
+    "Green Cotton Boll": {
+        "healthy_image": "static/images/healthy_leaf.jpg",
+        "description": "Green cotton boll indicates developing boll growth that should be monitored for nutrition, pests, and disease pressure.",
+        "symptoms": "Green immature bolls with no clear disease symptoms unless stress, pest injury, or spotting appears.",
+        "treatment": "Maintain balanced irrigation and nutrition, scout for pests, and continue regular field monitoring.",
+    },
+    "Healthy": {
+        "healthy_image": "static/images/healthy_leaf.jpg",
+        "description": "The leaf appears healthy with no major visible disease symptoms detected.",
+        "symptoms": "Uniform green color, normal leaf shape, and no significant spots, mildew, curling, or pest damage.",
+        "treatment": "Continue routine monitoring, balanced fertilization, proper irrigation, and preventive crop hygiene.",
+    },
+    "Powdery mildew": {
+        "healthy_image": "static/images/healthy_leaf.jpg",
+        "description": "Powdery mildew is a fungal disease that appears as white powdery growth on cotton leaves.",
+        "symptoms": "White or gray powdery patches, yellowing leaves, reduced vigor, and premature leaf drying.",
+        "treatment": "Improve airflow, remove infected debris, reduce leaf wetness, and apply recommended fungicide when needed.",
+    },
+    "Target Spot": {
+        "healthy_image": "static/images/healthy_leaf.jpg",
+        "description": "Target spot is a fungal leaf disease that produces circular lesions and can reduce cotton leaf area.",
+        "symptoms": "Brown circular spots with ring-like patterns, yellow halos, leaf blight, and premature defoliation.",
+        "treatment": "Reduce leaf wetness, improve spacing and airflow, remove infected residue, and use suitable fungicide if disease spreads.",
+    },
+}
 UNCERTAINTY_THRESHOLD = 0.45
 AMBIGUITY_MARGIN = 0.08
 
@@ -835,6 +886,9 @@ def analyze():
             if results.get("error"):
                 raise ValueError(results["error"])
 
+            predicted_class = results.get("disease", {}).get("predicted_class", "")
+            disease_info = disease_info_map.get(predicted_class, {})
+
             return render_template(
                 "results.html",
                 results=results,
@@ -845,6 +899,7 @@ def analyze():
                 timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 weather=weather,
                 grad_cam_image_b64=results.get("grad_cam_image_b64"),
+                disease_info=disease_info,
             )
         except Exception as exc:
             logger.error("Analysis error: %s", exc)
@@ -1005,6 +1060,7 @@ def demo():
             raw_json=json.dumps(example_json, indent=2),
             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             grad_cam_image_b64=grad_cam_image_b64,
+            disease_info=disease_info_map.get("Healthy", {}),
         )
     except Exception as e:
         logger.error(f"Demo route failed: {e}")

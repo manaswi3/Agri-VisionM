@@ -3717,3 +3717,97 @@ html {
 ========================================================= */
 =======
  main
+
+.agri-leaf-compare-wrap {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 22px;
+    background: rgba(12, 22, 20, 0.72);
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(18px);
+}
+
+.agri-leaf-compare-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+}
+
+.agri-leaf-compare-card {
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.agri-leaf-compare-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(78, 214, 122, 0.35);
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
+}
+
+.agri-leaf-compare-imagebox {
+    position: relative;
+    width: 100%;
+    height: 260px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.agri-leaf-compare-imagebox img {
+    width: 100%;
+    height: 260px;
+    object-fit: cover;
+    display: block;
+}
+
+.agri-leaf-healthy-label,
+.agri-leaf-diseased-label {
+    position: absolute;
+    left: 1rem;
+    bottom: 1rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 999px;
+    color: #ffffff;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25);
+}
+
+.agri-leaf-healthy-label {
+    background: rgba(34, 197, 94, 0.88);
+}
+
+.agri-leaf-diseased-label {
+    background: rgba(239, 68, 68, 0.88);
+}
+
+.agri-leaf-symptoms-panel,
+.agri-leaf-treatment-panel {
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.055);
+    color: rgba(255, 255, 255, 0.86);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+.agri-leaf-symptoms-panel strong,
+.agri-leaf-treatment-panel strong {
+    color: #9ff0b8;
+}
+
+@media (max-width: 768px) {
+    .agri-leaf-compare-wrap {
+        padding: 1rem;
+    }
+
+    .agri-leaf-compare-grid {
+        grid-template-columns: 1fr;
+    }
+}
