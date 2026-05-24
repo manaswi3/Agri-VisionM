@@ -206,6 +206,7 @@ growth_boxes = growth.boxes|default([]) %}
             <div style="font-size: 1.3rem; font-weight: 600; color: #2980b9;">{{ weather.precipitation }} mm</div>
             <div style="font-size: 0.75rem; color: #6c757d;">Precipitation</div>
       <!-- Analyzed Image + Bounding Boxes -->
+      {% endif %}
       {% if image_b64 %}
       <div
         class="result-img-container"
@@ -226,7 +227,7 @@ growth_boxes = growth.boxes|default([]) %}
             height="{{ (img_shape.height|default(1) / img_shape.width|default(1) * 410)|int }}"
           ></svg>
         </div>
-
+        {% endif %}
         {% if grad_cam_image_b64 %}
         <div
           id="grad-cam-view"
