@@ -11,6 +11,7 @@ import logging
 import os
 import random
 import re
+import threading
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
@@ -148,9 +149,94 @@ disease_info_map = {
 UNCERTAINTY_THRESHOLD = 0.45
 AMBIGUITY_MARGIN = 0.08
 
+RESNET_MODEL_PATH = "models/cotton_crop_disease_classification/full_resnet50_model.pth"
+YOLO_MODEL_PATH = "models/cotton_crop_growth_stage_prediction/best.pt"
+
 resnet_model = None
 yolo_model = None
 _models_loaded = False
+
+
+class ModelManager:
+    _instance = None
+    _instance_lock = threading.Lock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self):
+        if getattr(self, "_initialized", False):
+            return
+        self._load_lock = threading.Lock()
+        self.loaded = False
+        self.errors = {"resnet": None, "yolo": None}
+        self._initialized = True
+
+    def load_models(self) -> Tuple[Optional[torch.nn.Module], Optional[YOLO]]:
+        global resnet_model, yolo_model, _models_loaded
+
+        if self.loaded:
+            return resnet_model, yolo_model
+
+        with self._load_lock:
+            if self.loaded:
+                return resnet_model, yolo_model
+
+            if resnet_model is None:
+                try:
+                    try:
+                        resnet_model = torch.load(
+                            RESNET_MODEL_PATH,
+                            map_location=torch.device("cpu"),
+                        )
+                    except TypeError:
+                        resnet_model = torch.load(
+                            RESNET_MODEL_PATH,
+                            map_location=torch.device("cpu"),
+                            weights_only=False,
+                        )
+                    resnet_model.eval()
+                    self.errors["resnet"] = None
+                    logger.info("ResNet50 model loaded successfully")
+                except Exception as exc:
+                    self.errors["resnet"] = str(exc)
+                    logger.warning("ResNet50 model not found or failed to load: %s", exc)
+                    resnet_model = None
+
+            if yolo_model is None:
+                try:
+                    yolo_model = YOLO(YOLO_MODEL_PATH)
+                    self.errors["yolo"] = None
+                    logger.info("YOLOv8 model loaded successfully")
+                except Exception as exc:
+                    self.errors["yolo"] = str(exc)
+                    logger.warning("YOLOv8 model not found or failed to load: %s", exc)
+                    yolo_model = None
+
+            self.loaded = True
+            _models_loaded = True
+            return resnet_model, yolo_model
+
+    def diagnostics(self) -> Dict[str, Any]:
+        return {
+            "resnet": {
+                "loaded": resnet_model is not None,
+                "path": RESNET_MODEL_PATH,
+                "error": None if resnet_model is not None else self.errors.get("resnet"),
+            },
+            "yolo": {
+                "loaded": yolo_model is not None,
+                "path": YOLO_MODEL_PATH,
+                "error": None if yolo_model is not None else self.errors.get("yolo"),
+            },
+        }
+
+
+model_manager = ModelManager()
 
 
 def _ensure_rgb(image: np.ndarray) -> np.ndarray:
@@ -304,44 +390,13 @@ class GradCAM:
 
 
 def load_models() -> Tuple[Optional[torch.nn.Module], Optional[YOLO]]:
-    global resnet_model, yolo_model, _models_loaded
-
-    if _models_loaded:
-        return resnet_model, yolo_model
-
-    if resnet_model is None:
-        try:
-            try:
-                resnet_model = torch.load(
-                    "models/cotton_crop_disease_classification/full_resnet50_model.pth",
-                    map_location=torch.device("cpu"),
-                )
-            except TypeError:
-                resnet_model = torch.load(
-                    "models/cotton_crop_disease_classification/full_resnet50_model.pth",
-                    map_location=torch.device("cpu"),
-                    weights_only=False,
-                )
-            resnet_model.eval()
-            logger.info("ResNet50 model loaded successfully")
-        except Exception as exc:
-            logger.warning("ResNet50 model not found or failed to load: %s", exc)
-            resnet_model = None
-
-    if yolo_model is None:
-        try:
-            yolo_model = YOLO("models/cotton_crop_growth_stage_prediction/best.pt")
-            logger.info("YOLOv8 model loaded successfully")
-        except Exception as exc:
-            logger.warning("YOLOv8 model not found or failed to load: %s", exc)
-            yolo_model = None
-
-    _models_loaded = True
-    return resnet_model, yolo_model
+    return model_manager.load_models()
 
 
 def ensure_models_loaded() -> None:
-    load_models()
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return
+    model_manager.load_models()
 
 
 def preprocess_image_for_resnet(image: np.ndarray, target_size: Tuple[int, int] = (224, 224)) -> torch.Tensor:
@@ -435,6 +490,7 @@ def infer_disease(image: np.ndarray) -> Dict[str, Any]:
         "interpretation_message": interpretation_message,
     }
 
+
 def infer_growth_stage(image: np.ndarray) -> Dict[str, Any]:
     result = {
         "main_class": None,
@@ -487,7 +543,7 @@ def generate_recommendations(
     weather: Optional[Dict[str, Any]] = None,
 ) -> list[str]:
     recs: list[str] = []
-    dclass = disease_result["predicted_class"]
+    dclass = disease_result.get("predicted_class", "Healthy")
 
     instr_map = {
         "Aphids": [
@@ -531,12 +587,19 @@ def generate_recommendations(
     elif disease_result["health_score"] < 70:
         recs.append("Increase frequency of crop monitoring based on moderate health.")
 
+    health_score = float(disease_result.get("health_score", 100.0))
+
+    if health_score < 50.0:
+        recs.append("Consult an agricultural expert")
+    elif health_score < 70.0:
+        recs.append("Increase frequency of crop monitoring based on moderate health.")
+
     if disease_result.get("is_uncertain"):
         recs.append(
             "Model confidence is low. Please upload a clearer image or consult an agricultural expert."
         )
-
     elif disease_result.get("is_ambiguous"):
+
         alt = disease_result.get("alternative_prediction", {}).get(
             "class", "another condition"
         )
@@ -574,10 +637,46 @@ def generate_recommendations(
     return recs[:6]
 
 
+def fetch_weather_for_location(
+    lat: Optional[float] = None,
+    lon: Optional[float] = None,
+    city: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    if lat is not None and lon is not None:
+        owm_key = os.getenv("OPENWEATHER_API_KEY")
+        return get_weather(lat, lon, owm_key)
+
+    if city:
+        geo = geocode_city(city)
+        if geo:
+            owm_key = os.getenv("OPENWEATHER_API_KEY")
+            return get_weather(geo["lat"], geo["lon"], owm_key)
+
+    return None
+
+
+def enrich_results_with_weather(
+    results: Dict[str, Any],
+    lat: Optional[float] = None,
+    lon: Optional[float] = None,
+    city: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    weather = fetch_weather_for_location(lat=lat, lon=lon, city=city)
+
+    if weather and results.get("disease") and results.get("growth"):
+        results["recommendations"] = (
+            results.get("recommendations", [])
+            + generate_weather_recommendations(weather)
+        )[:6]
+        results["weather"] = weather
+
+    return weather
+
+
 def generate_farmer_insights(disease_result: Dict[str, Any], growth_result: Dict[str, Any]) -> list[str]:
     insights = []
-    dclass = disease_result["predicted_class"]
-    hscore = disease_result["health_score"]
+    dclass = disease_result.get("predicted_class", "Healthy")
+    hscore = float(disease_result.get("health_score", 100.0))
     gmain = growth_result.get("main_class", "Unknown")
 
     if dclass != "Healthy":
@@ -603,7 +702,7 @@ def generate_farmer_insights(disease_result: Dict[str, Any], growth_result: Dict
 
 def generate_advanced_recommendations(disease_result: Dict[str, Any], growth_result: Dict[str, Any]) -> Dict[str, str]:
     gmain = growth_result.get("main_class", "Unknown")
-    dclass = disease_result["predicted_class"]
+    dclass = disease_result.get("predicted_class", "Healthy")
 
     adv_recs = {
         "irrigation_timing": "Maintain standard schedule (every 7-10 days depending on soil moisture).",
@@ -708,19 +807,29 @@ def analyze_image(image: np.ndarray) -> Dict[str, Any]:
             "farmer_insights": insights,
         }
 
+        warnings = []
+        if resnet_model is None:
+            warnings.append(
+                "Disease model unavailable in this deployment; fallback confidence estimates are being used."
+            )
+
         if growth.get("main_class") is None:
             fallback_reason = (
                 "Growth stage model unavailable in this deployment."
                 if yolo_model is None
                 else "Cotton growth stage could not be detected from the uploaded image."
             )
-            result["warnings"] = [
+            warnings.extend([
                 fallback_reason,
                 "Disease analysis is still provided, but comparison may be less reliable without a confirmed cotton crop detection.",
                 "Grad-CAM explainability may also be affected if the primary crop is not detected.",
-            ]
+            ])
+
+        if warnings:
+            result["warnings"] = warnings
 
         return result
+
     except Exception as exc:
         logger.error("Unexpected error in image analysis: %s", exc)
         return {
@@ -875,15 +984,18 @@ def dashboard():
 @app.route("/health")
 def health():
     ensure_models_loaded()
+    model_loaded = resnet_model is not None and yolo_model is not None
+    diagnostics = model_manager.diagnostics()
     return jsonify(
         {
             "status": "healthy",
+            "mode": "ready" if model_loaded else "degraded",
             "timestamp": datetime.now().isoformat(),
-            "model_loaded": resnet_model is not None and yolo_model is not None,
+            "model_loaded": model_loaded,
+            "models": diagnostics,
             "service": "Agri-Vision Cotton Analysis API",
         }
     )
-
 
 @app.route("/history")
 def history():
